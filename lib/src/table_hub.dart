@@ -1,9 +1,9 @@
-import 'package:rxdart/rxdart.dart';
+import 'dart:async';
 
 /// Row storage type: keyed by C0 (id), value is positional columns [C0, C1, …, Cn].
 typedef HubData = Map<dynamic, List<dynamic>>;
 
-/// Abstract reactive data store that wraps a [BehaviorSubject] around a
+/// Abstract reactive data store that wraps a [StreamController] around a
 /// column-positional [HubData] map.
 ///
 /// Subclass this to create domain-specific hubs (e.g. `OrdersHub`,
@@ -21,26 +21,29 @@ typedef HubData = Map<dynamic, List<dynamic>>;
 /// ```
 abstract class TableHub {
   /// Creates a [TableHub] seeded with optional initial [data].
-  TableHub([HubData? data])
-    : _subject = BehaviorSubject<HubData>.seeded(data ?? <dynamic, List<dynamic>>{});
+  TableHub([HubData? data]) {
+    _current = data ?? <dynamic, List<dynamic>>{};
+    _controller = StreamController<HubData>.broadcast();
+  }
 
-  final BehaviorSubject<HubData> _subject;
+  late HubData _current;
+  late final StreamController<HubData> _controller;
 
   // ---------------------------------------------------------------------------
   // Read
   // ---------------------------------------------------------------------------
 
-  /// A broadcast [ValueStream] that emits on every mutation.
-  ValueStream<HubData> get stream$ => _subject.stream;
+  /// A broadcast [Stream] that emits on every mutation.
+  Stream<HubData> get stream$ => _controller.stream;
 
   /// The current snapshot (synchronous access).
-  HubData get current => _subject.value;
+  HubData get current => _current;
 
   /// Number of rows in the current snapshot.
-  int get length => current.length;
+  int get length => _current.length;
 
   /// Whether the hub contains zero rows.
-  bool get isEmpty => current.isEmpty;
+  bool get isEmpty => _current.isEmpty;
 
   // ---------------------------------------------------------------------------
   // Write
@@ -54,12 +57,12 @@ abstract class TableHub {
       row.isNotEmpty && row[0] == id,
       'row[0] (C0) must equal the supplied id',
     );
-    _emit({...current, id: List<dynamic>.unmodifiable(row)});
+    _emit({..._current, id: List<dynamic>.unmodifiable(row)});
   }
 
   /// Inserts or updates multiple rows at once.
   void upsertAll(HubData rows) {
-    final next = {...current};
+    final next = {..._current};
     for (final entry in rows.entries) {
       assert(
         entry.value.isNotEmpty && entry.value[0] == entry.key,
@@ -72,16 +75,15 @@ abstract class TableHub {
 
   /// Removes the row with the given [id]. No-op if absent.
   void remove(dynamic id) {
-    if (!current.containsKey(id)) return;
-    final next = {...current}..remove(id);
+    if (!_current.containsKey(id)) return;
+    final next = {..._current}..remove(id);
     _emit(next);
   }
 
   /// Replaces all data with [data]. Existing rows are discarded.
   void seed(HubData data) {
     final immutable = <dynamic, List<dynamic>>{
-      for (final e in data.entries)
-        e.key: List<dynamic>.unmodifiable(e.value),
+      for (final e in data.entries) e.key: List<dynamic>.unmodifiable(e.value),
     };
     _emit(immutable);
   }
@@ -93,12 +95,15 @@ abstract class TableHub {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  /// Closes the underlying [BehaviorSubject]. Must be called to prevent leaks.
-  void dispose() => _subject.close();
+  /// Closes the underlying [StreamController]. Must be called to prevent leaks.
+  void dispose() => _controller.close();
 
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
 
-  void _emit(HubData next) => _subject.add(Map<dynamic, List<dynamic>>.unmodifiable(next));
+  void _emit(HubData next) {
+    _current = Map<dynamic, List<dynamic>>.unmodifiable(next);
+    _controller.add(_current);
+  }
 }

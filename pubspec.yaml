@@ -8,8 +8,9 @@ publish_to: none
 environment:
   sdk: ^3.11.0
 
-dependencies:
-  rxdart: ^0.28.0
 
 dev_dependencies:
   test: ^1.25.0
+dependencies:
+  rxdart: ^0.28.0
+  stream_transform: ^2.1.1
