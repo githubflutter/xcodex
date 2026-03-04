@@ -1,0 +1,15 @@
+name: xcodex
+description: >
+  High-performance, schema-free dynamic data hub.
+  Column-positional storage (C0…Cn) with reactive streams and LINQ-style queries.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  rxdart: ^0.28.0
+
+dev_dependencies:
+  test: ^1.25.0
