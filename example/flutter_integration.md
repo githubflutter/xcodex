@@ -1,6 +1,6 @@
 # Flutter Integration Example
 
-Since `xcodex` is a pure Dart package, it doesn't depend on Flutter. However, its reactivity is built using `rxdart` Streams, making it perfectly compatible with Flutter's `StreamBuilder`.
+Since `xcodex` is a pure Dart package with **zero external dependencies**, it works seamlessly with Flutter's `StreamBuilder` and any stream manipulation library you choose to add.
 
 Here is an example of how you can use the `GlobalDataSet` and `TableHub` in your Flutter application:
 

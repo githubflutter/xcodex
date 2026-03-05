@@ -1,71 +1,159 @@
-# RxDart & Stream Transform Integration
+# Pure Dart Stream Integration
 
-Because we updated `TableHub.stream$` to expose a standard native Dart `Stream<HubData>` using modern `dart:async`, **all of RxDart's powerful extension methods work entirely out-of-the-box via Dart Extensions!**
+**xcodex** uses only `dart:async` and `dart:core` — zero external dependencies. All stream operations use native Dart patterns.
 
-You don't need `TableHub` to be tightly coupled or wrapped in older RxDart classes like `Observable`. The modern, optimized approach in Dart is that RxDart operators are just extension methods on the core `Stream` class.
+## Stream Operators via Extension Methods
 
-### 1. Combine Latest Example
-If you want to combine streams from two different tables in `GlobalDataSet`:
+You can add your own extension methods or use inline `StreamTransformer` for operations like debounce, throttle, and filtering.
+
+### 1. Combine Latest Example (Pure Dart)
+
+Combine streams from multiple tables using `StreamGroup` or manual merging:
 
 ```dart
-import 'package:rxdart/rxdart.dart';
+import 'dart:async';
 import 'package:xcodex/xcodex.dart';
 
 void main() {
   final usersHub = GlobalDataSet().table('Users');
   final ordersHub = GlobalDataSet().table('Orders');
 
-  // Use CombineLatestStream.combine2 (modern rxdart API)
-  final combinedStream = CombineLatestStream.combine2(
-    usersHub.stream$,
-    ordersHub.stream$,
-    (users, orders) {
-      return {
-        'totalUsers': users.length,
-        'totalOrders': orders.length,
-      };
-    },
-  );
+  // Pure Dart: Combine latest using StreamController
+  final combinedController = StreamController<Map<String, int>>.broadcast();
+  
+  Map<dynamic, List<dynamic>>? latestUsers;
+  Map<dynamic, List<dynamic>>? latestOrders;
 
-  combinedStream.listen(print);
+  usersHub.stream$.listen((data) {
+    latestUsers = data;
+    if (latestOrders != null) {
+      combinedController.add({
+        'totalUsers': latestUsers!.length,
+        'totalOrders': latestOrders!.length,
+      });
+    }
+  });
+
+  ordersHub.stream$.listen((data) {
+    latestOrders = data;
+    if (latestUsers != null) {
+      combinedController.add({
+        'totalUsers': latestUsers!.length,
+        'totalOrders': latestOrders!.length,
+      });
+    }
+  });
+
+  combinedController.stream.listen(print);
 }
 ```
 
-### 2. Stream Capabilities (Debounce, MapNotNull, Throttle)
-Use RxDart's extension methods directly on `stream$`:
+### 2. Debounce/Throttle with StreamTransformer
+
+Create reusable transformers for common operations:
 
 ```dart
-import 'package:rxdart/rxdart.dart';
+import 'dart:async';
 import 'package:xcodex/xcodex.dart';
+
+/// Debounce transformer — emits only after [duration] of silence.
+StreamTransformer<T, T> debounceTransformer<T>(Duration duration) {
+  return StreamTransformer<T, T>.fromHandlers(
+    handleData: (data, sink) {
+      // Cancel previous timer
+      _timer?.cancel();
+      _timer = Timer(duration, () => sink.add(data));
+    },
+  );
+}
+
+Timer? _timer;
 
 void listenToTraffic() {
   final hub = GlobalDataSet().table('Traffic');
 
-  // All extension methods (debounceTime, whereType, etc.) are available!
+  // Apply debounce using pure Dart transformer
   hub.stream$
-      .debounceTime(const Duration(milliseconds: 500))
+      .transform(debounceTransformer(const Duration(milliseconds: 500)))
       .where((data) => data.isNotEmpty)
       .listen((filteredData) {
-    print('Heavy traffic data updated: ${filteredData.length} records');
+    print('Traffic data updated: ${filteredData.length} records');
   });
 }
 ```
 
-### 3. Alternative: `stream_transform`
-We also added `stream_transform` (the official async package by the Dart team) which provides a more lightweight, heavily optimized set of operators for modern Dart:
+### 3. Throttle Example
 
 ```dart
-import 'package:stream_transform/stream_transform.dart';
+import 'dart:async';
 import 'package:xcodex/xcodex.dart';
+
+/// Throttle transformer — emits first value, then ignores for [duration].
+StreamTransformer<T, T> throttleTransformer<T>(Duration duration) {
+  DateTime? lastEmit;
+
+  return StreamTransformer<T, T>.fromHandlers(
+    handleData: (data, sink) {
+      final now = DateTime.now();
+      if (lastEmit == null || now.difference(lastEmit!) >= duration) {
+        lastEmit = now;
+        sink.add(data);
+      }
+    },
+  );
+}
 
 void optimizedStream() {
   final hub = GlobalDataSet().table('Analytics');
 
   hub.stream$
-      // Official Dart team's optimized throttle
-      .throttle(const Duration(seconds: 1))
+      .transform(throttleTransformer(const Duration(seconds: 1)))
       .listen((data) => print('Analytics updated.'));
 }
 ```
 
-Because `table.stream$` is now just a core `Stream<HubData>`, **any** stream manipulation library will work perfectly without needing to lock RxDart into the core internals!
+### 4. Using with StreamBuilder (Flutter)
+
+Since `stream$` is a standard `Stream<HubData>`, it works directly with Flutter:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:xcodex/xcodex.dart';
+
+StreamBuilder<HubData>(
+  stream: hub.stream$,
+  initialData: hub.current,
+  builder: (context, snapshot) {
+    // Build your UI
+  },
+)
+```
+
+## Why Pure Dart?
+
+- ✅ **Zero external dependencies** — no version conflicts
+- ✅ **Full control** — write only the transformers you need
+- ✅ **Smaller bundle size** — no transitive dependencies
+- ✅ **Compatible with everything** — works with RxDart, stream_transform, or any stream library if you choose to add them
+
+## Optional: Add RxDart Yourself
+
+If you need advanced operators, simply add `rxdart` to your project:
+
+```yaml
+dependencies:
+  xcodex: ^0.1.0
+  rxdart: ^0.28.0
+```
+
+Then use RxDart extension methods directly on `stream$`:
+
+```dart
+import 'package:rxdart/rxdart.dart';
+import 'package:xcodex/xcodex.dart';
+
+hub.stream$
+    .debounceTime(Duration(milliseconds: 500))
+    .distinct()
+    .listen((data) => print(data));
+```
